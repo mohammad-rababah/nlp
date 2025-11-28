@@ -28,8 +28,8 @@ from sklearn.model_selection import cross_val_score
 warnings.filterwarnings('ignore')
 
 RANDOM_STATE = 42  # Change this value to use different random state
-SAMPLE_SIZE_PER_CLASS = 1600  # Number of samples per class (positive/negative) for training
-TEST_SAMPLE_PER_CLASS = 400  # Number of samples per class for test
+SAMPLE_SIZE_PER_CLASS = 1800  # Number of samples per class (positive/negative) for training
+TEST_SAMPLE_PER_CLASS = 200  # Number of samples per class for test
 load_dotenv()
 
 # Toggle optional workflow components here. Add or remove names to customize the run.
@@ -493,7 +493,7 @@ def preprocess_dataset(data, preprocess_config):
     print(f"After preprocessing: {len(data)} samples")
     return data
 
-def train_test_split(data, test_size=0.2, random_state=None, stratify=None):
+def train_test_split(data, test_size=0.15, random_state=None, stratify=None):
     """
     Native implementation of train_test_split with stratification support.
     
@@ -501,7 +501,7 @@ def train_test_split(data, test_size=0.2, random_state=None, stratify=None):
     -----------
     data : pandas.DataFrame
         The dataset to split
-    test_size : float, default=0.2
+    test_size : float, default=0.15
         Proportion of dataset to include in the test split
     random_state : int, default=None
         Random seed for reproducibility
@@ -574,7 +574,7 @@ def train_test_split(data, test_size=0.2, random_state=None, stratify=None):
     
     return train_data, test_data
 
-def create_train_val_test_split(train_data, val_size=0.2):
+def create_train_val_test_split(train_data, val_size=0.15):
     print(f"Creating train/validation/test splits with validation size: {val_size}")  
     # Split training data into train and validation
     # 1600 pos , 1600 neg -> total
@@ -1145,8 +1145,7 @@ def main():
     
     # Load IMDB dataset
     train_data, test_data = load_imdb_data()
-    print("train_data sample: \n", train_data.head())
-    print("test_data sample: \n", test_data.head())
+
     # Preprocess datasets
     train_data = preprocess_dataset(train_data, preprocess_config)
     test_data = preprocess_dataset(test_data, preprocess_config)
@@ -1154,7 +1153,9 @@ def main():
     print("test_data sample after preprocessing: ", test_data.head())
     # Create train/validation/test splits
     train_data, val_data = create_train_val_test_split(train_data)
-    
+    print("train_data sample: \n", train_data.head())
+    print("development sample: \n", val_data.head())
+    print("test_data sample: \n", test_data.head())
     # Extract features
     X_train, X_val, X_test, y_train, y_val, y_test, feature_configuration = extract_features(
         train_data, val_data, test_data, max_features=10000, vector_features=VECTOR_FEATURES
