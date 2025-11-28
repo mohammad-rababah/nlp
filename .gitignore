@@ -40,7 +40,7 @@ ENV/
 # IMDB Dataset
 aclImdb_v1/
 aclImdb/
-*.txt
+
 
 # Results and outputs
 *.png
