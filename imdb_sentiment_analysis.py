@@ -12,33 +12,89 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from collections import Counter, defaultdict
-
-from dotenv import load_dotenv
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer, PorterStemmer
-from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
+
+def word_tokenize(text):
+    """
+    Manual implementation of word tokenization.
+    Splits text into tokens by whitespace and handles punctuation.
+    
+    Parameters:
+    -----------
+    text : str
+        Input text to tokenize
+    
+    Returns:
+    --------
+    list
+        List of tokens
+    """
+    if not text or not isinstance(text, str):
+        return []
+    
+    # Split on whitespace (handles multiple spaces, tabs, newlines)
+    tokens = text.split()
+    
+    # Process each token to handle punctuation
+    result = []
+    punctuation = '.,!?;:()[]{}"\''
+    
+    for token in tokens:
+        if not token:
+            continue
+            
+        # Handle tokens with punctuation
+        # Split punctuation from words while preserving contractions
+        i = 0
+        current_token = []
+        
+        while i < len(token):
+            char = token[i]
+            
+            # If it's punctuation
+            if char in punctuation:
+                # Save current token if any
+                if current_token:
+                    result.append(''.join(current_token))
+                    current_token = []
+                # Add punctuation as separate token
+                result.append(char)
+            # Handle apostrophes/contractions (keep them with the word)
+            elif char in "'’":
+                current_token.append(char)
+            # Regular character
+            else:
+                current_token.append(char)
+            
+            i += 1
+        
+        # Add remaining token if any
+        if current_token:
+            result.append(''.join(current_token))
+    
+    # Filter out empty strings
+    result = [token for token in result if token.strip()]
+    
+    return result
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import SGDClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import cross_val_score
 
 warnings.filterwarnings('ignore')
 
 RANDOM_STATE = 42  # Change this value to use different random state
 SAMPLE_SIZE_PER_CLASS = 1800  # Number of samples per class (positive/negative) for training
 TEST_SAMPLE_PER_CLASS = 200  # Number of samples per class for test
-load_dotenv()
 
 # Toggle optional workflow components here. Add or remove names to customize the run.
 WORKFLOW_FEATURES = [
     'download_nltk_data',
     'plot_confusion_matrices',
     'plot_accuracy_comparison',
-    'cross_validation', # 1000 -> cv = 5 -> 200 200 .. ->
-    'plot_cross_validation_results',
     'save_results',
     'example_predictions',
     'draw_bag_of_words'
@@ -328,10 +384,6 @@ def download_nltk_data():
     else:
         ssl._create_default_https_context = _create_unverified_https_context
     try:
-        nltk.data.find('tokenizers/punkt_tab')
-    except LookupError:
-        nltk.download('punkt_tab')
-    try:
         nltk.data.find('corpora/stopwords')
     except LookupError:
         nltk.download('stopwords')
@@ -344,10 +396,7 @@ def download_nltk_data():
     except LookupError:
         nltk.download('averaged_perceptron_tagger_eng')
 
-def load_imdb_data(data_path=None):
-    # Get data path from environment variable or use default
-    if data_path is None:
-        data_path = os.getenv('IMDB_DATA_PATH', 'aclImdb_v1/aclImdb')
+def load_imdb_data(data_path='aclImdb'):
 
     print(f"Loading IMDB dataset with {SAMPLE_SIZE_PER_CLASS} samples per class...")
     
@@ -376,7 +425,7 @@ def load_imdb_data(data_path=None):
         return reviews, sentiment_labels
     
     # Load training data with sample limit
-    train_pos_dir = os.path.join(data_path, "train", "pos") # aclImdb_v1/aclImdb/train/pos
+    train_pos_dir = os.path.join(data_path, "train", "pos") # aclImdb/train/pos
     train_neg_dir = os.path.join(data_path, "train", "neg")
     
     train_pos_reviews, train_pos_labels = load_reviews_from_directory(train_pos_dir, "positive", SAMPLE_SIZE_PER_CLASS)
@@ -838,51 +887,6 @@ def save_results(results, data_info, filename='imdb_sentiment_analysis_results.t
     
     print(f"Results saved to {filename}")
 
-def run_cross_validation(X, y, models, cv_folds=5):
-    print(f"Running {cv_folds}-fold cross-validation...")
-    
-    # Encode labels for XGBoost (requires numeric labels)
-    label_encoder = LabelEncoder()
-    y_encoded = label_encoder.fit_transform(y)
-    
-    cv_results = {}
-    
-    for name, model in models.items():
-        scores = cross_val_score(model, X, y, cv=cv_folds, scoring='accuracy')
-        
-        cv_results[name] = {
-            'mean': scores.mean(),
-            'std': scores.std(),
-            'scores': scores
-        }
-        print(f"{name} - CV Accuracy: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
-    
-    return cv_results
-
-def plot_cross_validation_results(cv_results, save_path='imdb_cv_results.png'):
-    model_names = list(cv_results.keys())
-    means = [cv_results[name]['mean'] for name in model_names]
-    stds = [cv_results[name]['std'] for name in model_names]
-    
-    plt.figure(figsize=(12, 6))
-    colors = ['skyblue', 'lightgreen', 'lightcoral', 'gold', 'orange'][:len(model_names)]
-    bars = plt.bar(model_names, means, yerr=stds, capsize=5, color=colors)
-    plt.title('IMDB Sentiment Analysis - Cross-Validation Results', fontsize=16, fontweight='bold')
-    plt.xlabel('Models', fontsize=12)
-    plt.ylabel('Accuracy', fontsize=12)
-    plt.xticks(rotation=45)
-    plt.grid(axis='y', alpha=0.3)
-    
-    # Add value labels on bars
-    for bar, mean, std in zip(bars, means, stds):
-        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
-                f'{mean:.3f}±{std:.3f}', ha='center', va='bottom', fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.show()
-    print(f"Cross-validation results saved to {save_path}")
-
 DEFAULT_EXAMPLE_TEXTS = [
     "I absolutely loved this movie! The performances were outstanding and the story kept me engaged.",
     "What a waste of time. The plot was dull and the acting was terrible.",
@@ -891,15 +895,15 @@ DEFAULT_EXAMPLE_TEXTS = [
 
 def draw_bag_of_words_diagram(save_path='bag_of_words_diagram.png', train_data=None, preprocess_config=None):
     """
-    Create a visual diagram explaining Bag of Words representation using actual IMDB data.
+    Create histograms showing most frequent words in positive and negative reviews.
     """
     # Use actual IMDB data if provided, otherwise load sample
-    train_data_sample = None
     if train_data is None or preprocess_config is None:
-        print("Loading IMDB data for Bag of Words diagram...")
-        # Load a small sample for visualization
+        print("Loading IMDB data for word frequency histograms...")
+        # Load data for visualization
         train_data_sample, _ = load_imdb_data()
-        train_data_sample = train_data_sample.head(3)  # Use only 3 samples for visualization
+        # Use more samples for better statistics
+        train_data_sample = train_data_sample.head(500)  # Use 500 samples for better word frequency
         
         # Initialize preprocessing config
         remove_html_tags = is_preprocessing_feature_enabled('remove_html_tags')
@@ -919,166 +923,74 @@ def draw_bag_of_words_diagram(save_path='bag_of_words_diagram.png', train_data=N
         
         # Preprocess the sample
         train_data_sample = preprocess_dataset(train_data_sample, preprocess_config)
-        documents = train_data_sample['processed_text'].tolist()[:3]
-        original_docs = train_data_sample['text'].tolist()[:3]
     else:
         # Use provided data
-        train_data_sample = train_data.head(3).copy()
-        documents = train_data_sample['processed_text'].tolist()
-        original_docs = train_data_sample['text'].tolist()
+        train_data_sample = train_data.copy()
     
-    # Limit document length for display
-    max_doc_length = 100
-    display_docs = []
-    for doc in documents:
-        if len(doc) > max_doc_length:
-            display_docs.append(doc[:max_doc_length] + "...")
-        else:
-            display_docs.append(doc)
+    # Separate positive and negative reviews
+    positive_reviews = train_data_sample[train_data_sample['sentiment'] == 'positive']['processed_text'].tolist()
+    negative_reviews = train_data_sample[train_data_sample['sentiment'] == 'negative']['processed_text'].tolist()
     
-    # Use NGramCountVectorizer to build vocabulary (same as in extract_features)
-    # Use unigrams only for simplicity in visualization
-    count_vectorizer = NGramCountVectorizer(
-        max_features=50,  # Limit to 50 features for visualization
-        ngram_range=(1, 1),  # Unigrams only for clarity
-        min_df=1,
-        max_df=1.0
-    )
+    # Count word frequencies for each sentiment
+    positive_word_counts = Counter()
+    negative_word_counts = Counter()
     
-    # Fit and transform
-    count_matrix = count_vectorizer.fit_transform(documents)
-    vocabulary = list(count_vectorizer.vocabulary_.keys())
-    vocabulary = sorted(vocabulary)  # Sort for consistent display
+    for review in positive_reviews:
+        words = review.split()
+        positive_word_counts.update(words)
     
-    # Rebuild vocabulary mapping after sorting
-    vocab_dict = {word: idx for idx, word in enumerate(vocabulary)}
+    for review in negative_reviews:
+        words = review.split()
+        negative_word_counts.update(words)
     
-    # Get BoW vectors
-    bow_vectors = []
-    for i, doc in enumerate(documents):
-        vector = np.zeros(len(vocabulary), dtype=np.int32)
-        words = doc.split()
-        word_counts = Counter(words)
-        for word, count in word_counts.items():
-            if word in vocab_dict:
-                vector[vocab_dict[word]] = count
-        bow_vectors.append(vector.tolist())
+    # Get top N most frequent words for each sentiment
+    top_n = 20
+    top_positive_words = [word for word, count in positive_word_counts.most_common(top_n)]
+    top_negative_words = [word for word, count in negative_word_counts.most_common(top_n)]
     
-    # Create the figure with subplots
-    fig = plt.figure(figsize=(16, 10))
+    # Get frequencies
+    positive_freqs = [positive_word_counts[word] for word in top_positive_words]
+    negative_freqs = [negative_word_counts[word] for word in top_negative_words]
     
-    # Create a grid layout
-    gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+    # Create the figure with two subplots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
     
-    # 1. Documents section (left side)
-    ax1 = fig.add_subplot(gs[0:2, 0])
-    ax1.axis('off')
-    ax1.text(0.5, 0.95, 'Documents', ha='center', va='top', fontsize=16, fontweight='bold', transform=ax1.transAxes)
+    # Positive reviews histogram
+    bars1 = ax1.barh(range(len(top_positive_words)), positive_freqs, color='green', alpha=0.7)
+    ax1.set_yticks(range(len(top_positive_words)))
+    ax1.set_yticklabels(top_positive_words)
+    ax1.invert_yaxis()  # Top word at the top
+    ax1.set_xlabel('Word Frequency', fontsize=12, fontweight='bold')
+    ax1.set_title(f'Top {top_n} Most Frequent Words - Positive Reviews', fontsize=14, fontweight='bold', pad=15)
+    ax1.grid(axis='x', alpha=0.3)
     
-    y_pos = 0.85
-    for i, (orig_doc, proc_doc) in enumerate(zip(original_docs[:3], display_docs)):
-        sentiment = train_data_sample.iloc[i]['sentiment'] if train_data_sample is not None else 'N/A'
-        ax1.text(0.1, y_pos, f'Doc {i+1} ({sentiment}):', ha='left', va='top', fontsize=11, fontweight='bold', transform=ax1.transAxes)
-        # Show original (truncated)
-        orig_display = orig_doc[:80] + "..." if len(orig_doc) > 80 else orig_doc
-        ax1.text(0.1, y_pos - 0.06, f'Original: "{orig_display}"', ha='left', va='top', fontsize=9, 
-                style='italic', transform=ax1.transAxes)
-        # Show processed
-        ax1.text(0.1, y_pos - 0.12, f'Processed: "{proc_doc}"', ha='left', va='top', fontsize=9, 
-                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5), transform=ax1.transAxes)
-        y_pos -= 0.25
+    # Add value labels on bars
+    for i, (bar, freq) in enumerate(zip(bars1, positive_freqs)):
+        ax1.text(bar.get_width() + max(positive_freqs) * 0.01, bar.get_y() + bar.get_height()/2,
+                f'{freq}', ha='left', va='center', fontweight='bold', fontsize=9)
     
-    # 2. Vocabulary section (middle top)
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.axis('off')
-    ax2.text(0.5, 0.9, 'Vocabulary', ha='center', va='top', fontsize=16, fontweight='bold', transform=ax2.transAxes)
+    # Negative reviews histogram
+    bars2 = ax2.barh(range(len(top_negative_words)), negative_freqs, color='red', alpha=0.7)
+    ax2.set_yticks(range(len(top_negative_words)))
+    ax2.set_yticklabels(top_negative_words)
+    ax2.invert_yaxis()  # Top word at the top
+    ax2.set_xlabel('Word Frequency', fontsize=12, fontweight='bold')
+    ax2.set_title(f'Top {top_n} Most Frequent Words - Negative Reviews', fontsize=14, fontweight='bold', pad=15)
+    ax2.grid(axis='x', alpha=0.3)
     
-    # Display vocabulary (limit display to fit)
-    vocab_display = vocabulary[:20]  # Show first 20 words
-    vocab_text = ' | '.join([f'{i}: {word}' for i, word in enumerate(vocab_display)])
-    if len(vocabulary) > 20:
-        vocab_text += f'\n... and {len(vocabulary) - 20} more terms'
-    ax2.text(0.5, 0.5, vocab_text, ha='center', va='center', fontsize=9, 
-            bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.5), transform=ax2.transAxes)
-    ax2.text(0.5, 0.85, f'Total Vocabulary: {len(vocabulary)} terms', ha='center', va='top', 
-            fontsize=10, fontweight='bold', transform=ax2.transAxes)
+    # Add value labels on bars
+    for i, (bar, freq) in enumerate(zip(bars2, negative_freqs)):
+        ax2.text(bar.get_width() + max(negative_freqs) * 0.01, bar.get_y() + bar.get_height()/2,
+                f'{freq}', ha='left', va='center', fontweight='bold', fontsize=9)
     
-    # 3. Bag of Words Matrix (right side)
-    ax3 = fig.add_subplot(gs[0:2, 1:3])
-    
-    # Create matrix visualization
-    matrix = np.array(bow_vectors)
-    max_vocab_display = min(30, len(vocabulary))  # Show max 30 terms on x-axis for readability
-    matrix_display = matrix[:, :max_vocab_display] if matrix.shape[1] > max_vocab_display else matrix
-    max_val = max(max(row) for row in bow_vectors) if bow_vectors else 1
-    im = ax3.imshow(matrix_display, cmap='YlOrRd', aspect='auto', vmin=0, vmax=max_val)
-    
-    # Set ticks and labels (limit vocabulary display for readability)
-    ax3.set_xticks(range(max_vocab_display))
-    ax3.set_xticklabels(vocabulary[:max_vocab_display], rotation=45, ha='right', fontsize=8)
-    ax3.set_yticks(range(len(documents)))
-    sentiment_labels = []
-    if train_data_sample is not None:
-        for i in range(len(documents)):
-            sent = train_data_sample.iloc[i]['sentiment']
-            sentiment_labels.append(f'Doc {i+1} ({sent})')
-    else:
-        sentiment_labels = [f'Doc {i+1}' for i in range(len(documents))]
-    ax3.set_yticklabels(sentiment_labels)
-    ax3.set_xlabel('Vocabulary Terms', fontsize=12, fontweight='bold')
-    ax3.set_ylabel('Documents', fontsize=12, fontweight='bold')
-    ax3.set_title('Bag of Words Feature Matrix', fontsize=14, fontweight='bold', pad=20)
-    
-    # Add text annotations for each cell (limit to displayed vocabulary)
-    for i in range(len(documents)):
-        for j in range(max_vocab_display):
-            text = ax3.text(j, i, matrix_display[i, j], ha="center", va="center", 
-                          color="black", fontweight='bold', fontsize=9)
-    
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax3)
-    cbar.set_label('Word Count', rotation=270, labelpad=15)
-    
-    # 4. Example vectors (bottom)
-    ax4 = fig.add_subplot(gs[2, :])
-    ax4.axis('off')
-    ax4.text(0.5, 0.9, 'Feature Vectors (Bag of Words Representation)', ha='center', va='top', 
-            fontsize=14, fontweight='bold', transform=ax4.transAxes)
-    
-    y_start = 0.7
-    for i, (proc_doc, vector) in enumerate(zip(display_docs, bow_vectors)):
-        # Show first 20 values of vector for display
-        vector_preview = vector[:20]
-        vector_str = '[' + ', '.join(map(str, vector_preview))
-        if len(vector) > 20:
-            vector_str += f', ... ({len(vector)} total)'
-        vector_str += ']'
-        
-        sentiment = train_data_sample.iloc[i]['sentiment'] if train_data_sample is not None else ''
-        ax4.text(0.05, y_start, f'Doc {i+1} ({sentiment}):', ha='left', va='top', fontsize=10, fontweight='bold', 
-                transform=ax4.transAxes)
-        ax4.text(0.05, y_start - 0.08, vector_str, ha='left', va='top', fontsize=8, 
-                family='monospace', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7), 
-                transform=ax4.transAxes)
-        ax4.text(0.6, y_start, f'"{proc_doc}"', ha='left', va='top', fontsize=9, 
-                style='italic', transform=ax4.transAxes)
-        y_start -= 0.18
-    
-    # Add explanation text
-    explanation = (
-        "Bag of Words (IMDB Data): Each review is represented as a vector where each dimension "
-        "corresponds to a word/term in the vocabulary built from the training data. "
-        "The value indicates how many times that term appears in the processed document. "
-        f"Vocabulary size: {len(vocabulary)} terms (showing top {max_vocab_display} in matrix)."
-    )
-    ax4.text(0.5, 0.05, explanation, ha='center', va='bottom', fontsize=9, 
-            style='italic', wrap=True, transform=ax4.transAxes,
-            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.5))
-    
-    plt.suptitle('Bag of Words (BoW) Representation - IMDB Sentiment Analysis', fontsize=18, fontweight='bold', y=0.98)
+    plt.suptitle('Most Frequent Words in Positive vs Negative Reviews - IMDB Sentiment Analysis', 
+                fontsize=16, fontweight='bold', y=0.98)
+    plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"Bag of Words diagram saved to {save_path}")
+    print(f"Word frequency histograms saved to {save_path}")
+    print(f"Positive reviews analyzed: {len(positive_reviews)}")
+    print(f"Negative reviews analyzed: {len(negative_reviews)}")
 
 
 def generate_example_predictions(examples, best_model_name, results, feature_config, preprocess_config):
@@ -1178,24 +1090,6 @@ def main():
     else:
         print("Skipping accuracy comparison plot (feature disabled).")
     
-    # Run cross-validation
-    cv_results = None
-    if is_workflow_feature_enabled('cross_validation'):
-        models_for_cv = {
-            name: model for name, model in get_available_models().items()
-            if is_model_enabled(name, ENABLED_MODELS)
-        }
-        if models_for_cv:
-            cv_results = run_cross_validation(X_train, y_train, models_for_cv)
-        else:
-            print("No models enabled for cross-validation; skipping.")
-    else:
-        print("Skipping cross-validation (feature disabled).")
-
-    if is_workflow_feature_enabled('plot_cross_validation_results') and cv_results is not None:
-        plot_cross_validation_results(cv_results, save_path='imdb_cv_results.png')
-    elif is_workflow_feature_enabled('plot_cross_validation_results'):
-        print("Cross-validation results not available; skipping CV plot.")
     
     data_info = {
         'train_samples': len(train_data),
